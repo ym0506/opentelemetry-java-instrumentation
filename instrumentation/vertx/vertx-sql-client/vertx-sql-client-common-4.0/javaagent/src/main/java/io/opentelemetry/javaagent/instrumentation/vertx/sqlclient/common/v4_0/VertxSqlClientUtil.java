@@ -36,12 +36,8 @@ public class VertxSqlClientUtil {
 
   private static final ThreadLocal<VertxSqlClientInfoProvider> clientInfoProvider =
       new ThreadLocal<>();
-  private static final ThreadLocal<SqlConnectOptions> connectOptions = new ThreadLocal<>();
-  private static final ThreadLocal<String> dbSystem = new ThreadLocal<>();
   private static final VirtualField<Pool, VertxSqlClientInfoProvider> POOL_CLIENT_INFO =
       VirtualField.find(Pool.class, VertxSqlClientInfoProvider.class);
-  private static final VirtualField<Pool, SqlConnectOptions> POOL_CONNECT_OPTIONS =
-      VirtualField.find(Pool.class, SqlConnectOptions.class);
   private static final Map<String, String> dbSystemNameByPackage = buildPackageDbSystemNameMap();
   private static final VirtualField<Promise<?>, RequestData> REQUEST_DATA =
       VirtualField.find(Promise.class, RequestData.class);
@@ -61,32 +57,6 @@ public class VertxSqlClientUtil {
     return clientInfoProvider.get();
   }
 
-  public static void setSqlConnectOptions(@Nullable SqlConnectOptions value) {
-    if (value == null) {
-      connectOptions.remove();
-    } else {
-      connectOptions.set(value);
-    }
-  }
-
-  @Nullable
-  public static SqlConnectOptions getSqlConnectOptions() {
-    return connectOptions.get();
-  }
-
-  public static void setDbSystem(@Nullable String value) {
-    if (value == null) {
-      dbSystem.remove();
-    } else {
-      dbSystem.set(value);
-    }
-  }
-
-  @Nullable
-  public static String getDbSystem() {
-    return dbSystem.get();
-  }
-
   public static void setPoolClientInfoProvider(
       Pool pool, @Nullable VertxSqlClientInfoProvider value) {
     POOL_CLIENT_INFO.set(pool, value);
@@ -97,29 +67,20 @@ public class VertxSqlClientUtil {
     return POOL_CLIENT_INFO.get(pool);
   }
 
-  public static void setPoolConnectOptions(Pool pool, SqlConnectOptions value) {
-    POOL_CONNECT_OPTIONS.set(pool, value);
-  }
-
-  @Nullable
-  public static SqlConnectOptions getPoolSqlConnectOptions(Pool pool) {
-    return POOL_CONNECT_OPTIONS.get(pool);
-  }
-
   public static void setQueryExecutorData(
       Object queryExecutor, @Nullable VertxSqlClientInfoProvider infoProvider) {
     QueryExecutorUtil.setData(queryExecutor, infoProvider);
   }
 
   @Nullable
-  public static VertxSqlClientInfoProvider getQueryExecutorInfoProvider(Object queryExecutor) {
-    return (VertxSqlClientInfoProvider) QueryExecutorUtil.getData(queryExecutor);
-  }
-
-  @Nullable
   public static VertxSqlClientInfo getQueryExecutorInfo(Object queryExecutor) {
     VertxSqlClientInfoProvider infoProvider = getQueryExecutorInfoProvider(queryExecutor);
     return infoProvider != null ? infoProvider.getInfo() : null;
+  }
+
+  @Nullable
+  public static VertxSqlClientInfoProvider getQueryExecutorInfoProvider(Object queryExecutor) {
+    return (VertxSqlClientInfoProvider) QueryExecutorUtil.getData(queryExecutor);
   }
 
   public static Future<PreparedStatement> attachPreparedStatementInfo(
@@ -186,12 +147,12 @@ public class VertxSqlClientUtil {
       Promise<?> promise,
       @Nullable Throwable throwable) {
     RequestData requestData = REQUEST_DATA.get(promise);
-    if (requestData == null || !requestData.tryClaim()) {
+    if (requestData == null || !requestData.ended.compareAndSet(false, true)) {
       return null;
     }
     REQUEST_DATA.set(promise, null);
-    boolean infoUpdated = requestData.request.freezeInfo();
-    if (infoUpdated) {
+    if (requestData.request instanceof VertxSqlClientDeferredRequest
+        && ((VertxSqlClientDeferredRequest) requestData.request).freezeInfo()) {
       try {
         VertxSqlInstrumenterFactory.updateSpanName(requestData.context, requestData.request);
       } catch (Throwable t) {
@@ -203,19 +164,15 @@ public class VertxSqlClientUtil {
   }
 
   private static class RequestData {
-    private final AtomicBoolean ended = new AtomicBoolean();
     private final VertxSqlClientRequest request;
     private final Context context;
     private final Context parentContext;
+    private final AtomicBoolean ended = new AtomicBoolean();
 
     RequestData(VertxSqlClientRequest request, Context context, Context parentContext) {
       this.request = request;
       this.context = context;
       this.parentContext = parentContext;
-    }
-
-    private boolean tryClaim() {
-      return ended.compareAndSet(false, true);
     }
   }
 

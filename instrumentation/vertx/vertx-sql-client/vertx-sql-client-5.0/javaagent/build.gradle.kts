@@ -51,6 +51,7 @@ tasks {
   withType<Test>().configureEach {
     usesService(gradle.sharedServices.registrations["testcontainersBuildService"].service)
     systemProperty("collectMetadata", otelProps.collectMetadata)
+    systemProperty("testLatestDeps", otelProps.testLatestDeps)
   }
 
   val testStableSemconv = register<Test>("testStableSemconv") {
@@ -73,6 +74,24 @@ tasks {
       includeTestsMatching("VertxSqlClientTest.testConnectingToServerListWithUnixSocketOmitsStableTarget")
       includeTestsMatching("VertxSqlClientTest.testOracleSupplierConnectFailureCapturesSuppliedOptions")
       includeTestsMatching("VertxSqlClientTest.testSupplierAddressDoesNotBecomeFallbackSpanName")
+      includeTestsMatching("VertxSqlClientTest.testConcurrentSupplierPoolQueriesKeepTheirOptions")
+      includeTestsMatching("VertxSqlClientTest.testConcurrentSupplierFailuresKeepTheirOptions")
+      includeTestsMatching("VertxSqlClientTest.testConcurrentAdmissionKeepsSupplierAttemptWithItsQuery")
+      includeTestsMatching(
+        "VertxSqlClientTest.testQueuedReplacementStartsBeforePreviousFailureIsDelivered",
+      )
+      includeTestsMatching("VertxSqlClientTest.testExplicitAcquisitionDoesNotTakeQueuedQueryTarget")
+      includeTestsMatching(
+        "VertxSqlClientTest.testReusedConnectionKeepsItsTargetWhileAnotherAttemptStarts",
+      )
+      includeTestsMatching(
+        "VertxSqlClientTest.testSupplierQueryTimeoutFreezesTargetBeforeLateFailure",
+      )
+      includeTestsMatching("VertxSqlClientTest.testSupplierFailureBeforeTimeoutKeepsTargetAndError")
+      includeTestsMatching("VertxSqlClientTest.testFixedOptionsTimeoutRetainsConfiguredTarget")
+      includeTestsMatching(
+        "VertxSqlClientTest.testSynchronousSupplierThrowOverlappingQueryTimeoutEndsSpanOnce",
+      )
     }
   }
 

@@ -49,10 +49,13 @@ public class VertxSqlClientInstrumentationModule extends InstrumentationModule
         new ClientBuilderInstrumentation(),
         new CommandSchedulerInstrumentation(),
         new ConnectionFactoryInstrumentation(),
+        new ConnectionPoolInstrumentation(),
         new DriverInstrumentation(),
         new PoolInstrumentation(),
+        new PoolWaiterInstrumentation(),
         new SqlClientBaseInstrumentation(),
         new SqlConnectionBaseInstrumentation(),
+        new SqlConnectionPoolInstrumentation(),
         new PreparedStatementInstrumentation(),
         new QueryBaseInstrumentation(),
         new QueryExecutorInstrumentation(),
@@ -68,16 +71,10 @@ public class VertxSqlClientInstrumentationModule extends InstrumentationModule
     virtualFieldRegistrar.accept(
         "io.vertx.sqlclient.internal.command.CommandBase", Context.class.getName());
     virtualFieldRegistrar.accept(
-        "io.vertx.sqlclient.internal.command.CommandBase",
-        VertxSqlClientSingletons.ConnectionDataListener.class.getName());
-    virtualFieldRegistrar.accept(
         "io.vertx.sqlclient.internal.Connection", VertxSqlClientInfo.class.getName());
     // used in 5.1
     virtualFieldRegistrar.accept(
         "io.vertx.sqlclient.spi.protocol.CommandBase", Context.class.getName());
-    virtualFieldRegistrar.accept(
-        "io.vertx.sqlclient.spi.protocol.CommandBase",
-        VertxSqlClientSingletons.ConnectionDataListener.class.getName());
     virtualFieldRegistrar.accept(
         "io.vertx.sqlclient.spi.connection.Connection", VertxSqlClientInfo.class.getName());
   }

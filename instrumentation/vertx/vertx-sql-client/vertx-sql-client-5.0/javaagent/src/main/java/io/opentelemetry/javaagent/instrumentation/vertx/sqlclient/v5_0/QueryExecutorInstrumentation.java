@@ -6,8 +6,7 @@
 package io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.v5_0;
 
 import static io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientUtil.getClientInfoProvider;
-import static io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientUtil.getDbSystem;
-import static io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientUtil.getSqlConnectOptions;
+import static io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.v5_0.VertxSqlClientQueryState.QUERY_STATE;
 import static io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.v5_0.VertxSqlClientSingletons.instrumenter;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
 import static net.bytebuddy.matcher.ElementMatchers.named;
@@ -18,14 +17,13 @@ import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.bootstrap.CallDepth;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
+import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientDeferredRequest;
 import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientInfo;
-import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientInfoCapture;
 import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientInfoProvider;
 import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientRequest;
 import io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0.VertxSqlClientUtil;
 import io.vertx.core.Promise;
 import io.vertx.core.internal.PromiseInternal;
-import io.vertx.sqlclient.SqlConnectOptions;
 import io.vertx.sqlclient.internal.PreparedStatement;
 import java.util.Collection;
 import javax.annotation.Nullable;
@@ -53,48 +51,30 @@ class QueryExecutorInstrumentation implements TypeInstrumentation {
 
     @Advice.OnMethodExit(suppress = Throwable.class, inline = false)
     public static void onExit(@Advice.This Object queryExecutor) {
-      VertxSqlClientInfoProvider infoProvider = getClientInfoProvider();
-      if (infoProvider != null) {
-        VertxSqlClientUtil.setQueryExecutorData(queryExecutor, infoProvider);
-        return;
-      }
-      SqlConnectOptions connectOptions = getSqlConnectOptions();
-      String dbSystem = getDbSystem();
-      if (dbSystem == null) {
-        dbSystem = VertxSqlClientUtil.getDbSystemNameFromClassName(connectOptions);
-      }
-      VertxSqlClientUtil.setQueryExecutorData(
-          queryExecutor, VertxSqlClientInfo.createLegacy(connectOptions, dbSystem));
+      VertxSqlClientUtil.setQueryExecutorData(queryExecutor, getClientInfoProvider());
     }
   }
 
   @SuppressWarnings("unused")
   public static class QueryAdvice {
-    public static class AdviceScope implements VertxSqlClientSingletons.ConnectionDataListener {
+    public static class AdviceScope {
       private final CallDepth callDepth;
-      @Nullable private final VertxSqlClientInfoCapture infoCapture;
-      @Nullable private final Promise<?> promise;
-      @Nullable private volatile VertxSqlClientRequest otelRequest;
-      @Nullable private volatile Context context;
+      @Nullable private Promise<?> promise;
       @Nullable private Scope scope;
 
       private AdviceScope(CallDepth callDepth) {
-        this(callDepth, null, null);
-      }
-
-      private AdviceScope(
-          CallDepth callDepth,
-          @Nullable VertxSqlClientInfoCapture infoCapture,
-          @Nullable PromiseInternal<?> promiseInternal) {
         this.callDepth = callDepth;
-        this.infoCapture = infoCapture;
-        this.promise = promiseInternal;
       }
 
       public static AdviceScope start(Object queryExecutor, String methodName, Object[] arguments) {
         CallDepth callDepth = CallDepth.forClass(queryExecutor.getClass());
         if (callDepth.getAndIncrement() > 0) {
           return new AdviceScope(callDepth);
+        }
+        AdviceScope adviceScope = new AdviceScope(callDepth);
+        Context parentContext = Context.current();
+        if (parentContext.get(QUERY_STATE) != null) {
+          adviceScope.scope = parentContext.with(QUERY_STATE, null).makeCurrent();
         }
 
         // The parameter we need are in different positions, we are not going to have separate
@@ -121,71 +101,44 @@ class QueryExecutorInstrumentation implements TypeInstrumentation {
           }
         }
         if (sql == null || promiseInternal == null) {
-          return new AdviceScope(callDepth);
+          return adviceScope;
         }
 
         VertxSqlClientInfoProvider infoProvider =
             VertxSqlClientUtil.getQueryExecutorInfoProvider(queryExecutor);
         if (infoProvider == null) {
-          return new AdviceScope(callDepth);
+          return adviceScope;
         }
-        VertxSqlClientInfoCapture infoCapture =
-            infoProvider instanceof VertxSqlClientInfoCapture
-                ? (VertxSqlClientInfoCapture) infoProvider
-                : null;
-        VertxSqlClientInfo info =
-            infoCapture != null
-                ? VertxSqlClientInfo.notYetCaptured(infoCapture.getDbSystemName())
-                : infoProvider.getInfo();
+        VertxSqlClientInfo info = infoProvider.getInfo();
         if (info == null) {
-          return new AdviceScope(callDepth);
-        }
-
-        VertxSqlClientRequest otelRequest =
-            new VertxSqlClientRequest(sql, info, parameterizedQuery, batchSize);
-        Context parentContext = Context.current();
-        AdviceScope adviceScope = new AdviceScope(callDepth, infoCapture, promiseInternal);
-        if (!instrumenter().shouldStart(parentContext, otelRequest)) {
-          if (infoCapture != null) {
-            adviceScope.addConnectionRequest();
-          }
           return adviceScope;
         }
 
-        adviceScope.otelRequest = otelRequest;
+        VertxSqlClientRequest otelRequest =
+            infoProvider instanceof VertxSqlClientSupplierInfo
+                ? new VertxSqlClientDeferredRequest(sql, info, parameterizedQuery, batchSize)
+                : new VertxSqlClientRequest(sql, info, parameterizedQuery, batchSize);
+        if (!instrumenter().shouldStart(parentContext, otelRequest)) {
+          return adviceScope;
+        }
+
         Context context = instrumenter().start(parentContext, otelRequest);
-        adviceScope.context = context;
+        adviceScope.promise = promiseInternal;
         VertxSqlClientUtil.attachRequest(promiseInternal, otelRequest, context, parentContext);
+        if (otelRequest instanceof VertxSqlClientDeferredRequest) {
+          context =
+              context.with(
+                  QUERY_STATE,
+                  new VertxSqlClientQueryState(
+                      (VertxSqlClientDeferredRequest) otelRequest, promiseInternal, context));
+        } else if (context.get(QUERY_STATE) != null) {
+          context = context.with(QUERY_STATE, null);
+        }
+        if (adviceScope.scope != null) {
+          adviceScope.scope.close();
+        }
         adviceScope.scope = context.makeCurrent();
-        if (infoCapture != null) {
-          adviceScope.addConnectionRequest();
-        }
         return adviceScope;
-      }
-
-      private void addConnectionRequest() {
-        VertxSqlClientInfoCapture capture = infoCapture;
-        Promise<?> queryPromise = promise;
-        if (capture == null || queryPromise == null) {
-          return;
-        }
-        capture.addConnectionRequest(this);
-        queryPromise.future().onComplete(ignored -> capture.removeConnectionRequest(this));
-        VertxSqlClientSingletons.setPendingConnectionDataListener(this);
-      }
-
-      @Override
-      @Nullable
-      public Context onConnectionInfo(VertxSqlClientInfo info) {
-        VertxSqlClientInfoCapture capture = infoCapture;
-        if (capture != null) {
-          capture.removeConnectionRequest(this);
-        }
-        VertxSqlClientRequest request = otelRequest;
-        if (request == null) {
-          return null;
-        }
-        return request.replaceInfo(info) ? context : null;
       }
 
       private void endSpan(@Nullable Throwable throwable) {
@@ -199,9 +152,6 @@ class QueryExecutorInstrumentation implements TypeInstrumentation {
       }
 
       public void end(@Nullable Throwable throwable) {
-        if (infoCapture != null) {
-          VertxSqlClientSingletons.setPendingConnectionDataListener(null);
-        }
         if (callDepth.decrementAndGet() > 0) {
           return;
         }
@@ -212,9 +162,6 @@ class QueryExecutorInstrumentation implements TypeInstrumentation {
           executionScope.close();
         }
         if (throwable != null) {
-          if (infoCapture != null) {
-            infoCapture.removeConnectionRequest(this);
-          }
           endSpan(throwable);
         }
       }

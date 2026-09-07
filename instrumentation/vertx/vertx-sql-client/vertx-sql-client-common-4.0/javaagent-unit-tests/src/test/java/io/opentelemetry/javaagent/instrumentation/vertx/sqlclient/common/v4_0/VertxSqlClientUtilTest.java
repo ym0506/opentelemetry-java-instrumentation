@@ -5,17 +5,18 @@
 
 package io.opentelemetry.javaagent.instrumentation.vertx.sqlclient.common.v4_0;
 
-import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_MESSAGE;
+import static io.opentelemetry.sdk.testing.assertj.OpenTelemetryAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.incubator.semconv.db.DbClientSpanNameExtractor;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.StatusData;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.vertx.core.Promise;
 import io.vertx.sqlclient.SqlConnectOptions;
@@ -61,7 +62,9 @@ class VertxSqlClientUtilTest {
   @Test
   void freezesRequestBeforeEndingSpan() {
     Promise<Object> promise = Promise.promise();
-    VertxSqlClientRequest request = request("freeze");
+    VertxSqlClientDeferredRequest request =
+        new VertxSqlClientDeferredRequest(
+            "freeze", VertxSqlClientInfo.createUnknown("postgresql"), false, null);
     VertxSqlClientUtil.attachRequest(promise, request, Context.root(), Context.root());
 
     Scope scope = VertxSqlClientUtil.endQuerySpan(INSTRUMENTER, promise, null);
@@ -74,6 +77,49 @@ class VertxSqlClientUtilTest {
                     new SqlConnectOptions().setHost("db.example").setPort(5432), "postgresql")))
         .isFalse();
     assertThat(request.getConfiguredServerAddress()).isNull();
+  }
+
+  @Test
+  void updatesSpanNameAfterCapturingInfo() {
+    Promise<Object> promise = Promise.promise();
+    VertxSqlClientDeferredRequest request =
+        new VertxSqlClientDeferredRequest(
+            "", VertxSqlClientInfo.createUnknown("postgresql"), false, null);
+    InMemorySpanExporter exporter = InMemorySpanExporter.create();
+    try (SdkTracerProvider tracerProvider =
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(exporter))
+            .build()) {
+      OpenTelemetrySdk openTelemetry =
+          OpenTelemetrySdk.builder().setTracerProvider(tracerProvider).build();
+      Instrumenter<VertxSqlClientRequest, Void> instrumenter =
+          Instrumenter.<VertxSqlClientRequest, Void>builder(
+                  openTelemetry,
+                  "test",
+                  DbClientSpanNameExtractor.create(new VertxSqlClientAttributesGetter()))
+              .buildInstrumenter();
+      Context context = instrumenter.start(Context.root(), request);
+      assertThat(
+              request.replaceInfo(
+                  VertxSqlClientInfo.create(
+                      new SqlConnectOptions()
+                          .setHost("db.example")
+                          .setPort(5432)
+                          .setDatabase("database"),
+                      "postgresql")))
+          .isTrue();
+      VertxSqlClientUtil.attachRequest(promise, request, context, Context.root());
+
+      Scope scope = VertxSqlClientUtil.endQuerySpan(instrumenter, promise, null);
+
+      assertThat(scope).isNotNull();
+      scope.close();
+      assertThat(exporter.getFinishedSpanItems())
+          .singleElement()
+          .satisfies(
+              spanData -> assertThat(spanData).hasName("database").hasTotalAttributeCount(0));
+      assertThat(request.replaceInfo(VertxSqlClientInfo.createUnknown("postgresql"))).isFalse();
+    }
   }
 
   @Test
@@ -106,15 +152,14 @@ class VertxSqlClientUtilTest {
       assertThat(parentScope).isNotNull();
       parentScope.close();
       assertThat(request.spanNameExtractionFailures).hasValue(1);
-      assertThat(exporter.getFinishedSpanItems()).hasSize(1);
-      assertThat(exporter.getFinishedSpanItems().get(0).getStatus().getStatusCode())
-          .isEqualTo(StatusCode.ERROR);
-      assertThat(exporter.getFinishedSpanItems().get(0).getEvents())
+      assertThat(exporter.getFinishedSpanItems())
           .singleElement()
           .satisfies(
-              event ->
-                  assertThat(event.getAttributes().get(EXCEPTION_MESSAGE))
-                      .isEqualTo(applicationError.getMessage()));
+              spanData ->
+                  assertThat(spanData)
+                      .hasStatus(StatusData.error())
+                      .hasException(applicationError)
+                      .hasTotalAttributeCount(0));
       assertThat(VertxSqlClientUtil.endQuerySpan(instrumenter, promise, null)).isNull();
       assertThat(exporter.getFinishedSpanItems()).hasSize(1);
     }
@@ -180,15 +225,15 @@ class VertxSqlClientUtilTest {
 
   private static VertxSqlClientRequest request(String query) {
     return new VertxSqlClientRequest(
-        query, VertxSqlClientInfo.notYetCaptured("postgresql"), false, null);
+        query, VertxSqlClientInfo.create(new SqlConnectOptions(), "postgresql"), false, null);
   }
 
-  private static final class RenameFailingRequest extends VertxSqlClientRequest {
+  private static final class RenameFailingRequest extends VertxSqlClientDeferredRequest {
     private final AtomicInteger spanNameExtractionFailures = new AtomicInteger();
     private boolean failSpanNameExtraction;
 
     private RenameFailingRequest(String query) {
-      super(query, VertxSqlClientInfo.notYetCaptured("postgresql"), false, null);
+      super(query, VertxSqlClientInfo.createUnknown("postgresql"), false, null);
     }
 
     @Override

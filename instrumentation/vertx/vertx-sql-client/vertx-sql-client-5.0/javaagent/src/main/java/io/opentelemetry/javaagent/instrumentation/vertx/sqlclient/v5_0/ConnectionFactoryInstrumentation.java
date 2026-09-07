@@ -59,18 +59,18 @@ class ConnectionFactoryInstrumentation implements TypeInstrumentation {
 
     @AssignReturned.ToArguments(@ToArgument(value = 1, index = 0))
     @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
+    @Nullable
     public static Object[] onEnter(
-        @Advice.This Object connectionFactory,
         @Advice.Argument(1) Future<SqlConnectOptions> connectOptionsFuture) {
-      Future<SqlConnectOptions> result = connectOptionsFuture;
       ConnectionAttempt connectionAttempt =
-          VertxSqlClientSingletons.createConnectionAttempt(connectionFactory, connectOptionsFuture);
-      if (connectionAttempt != null) {
-        result =
-            VertxSqlClientSingletons.captureConnectionAttempt(
-                connectOptionsFuture, connectionAttempt);
+          VertxSqlClientConnectionPoolState.getConnectionAttempt();
+      if (connectionAttempt == null) {
+        return null;
       }
-      return new Object[] {result, connectionAttempt};
+      return new Object[] {
+        VertxSqlClientSingletons.captureConnectionAttempt(connectOptionsFuture, connectionAttempt),
+        connectionAttempt
+      };
     }
 
     @AssignReturned.ToReturned

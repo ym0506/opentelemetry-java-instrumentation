@@ -69,84 +69,76 @@ class PoolInstrumentation implements TypeInstrumentation {
   public static class PoolAdvice {
 
     @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
-    public static CallDepth onEnter(
+    public static PoolState onEnter(
         @Advice.Argument(1) SqlConnectOptions sqlConnectOptions,
         @Advice.Origin("#t") String declaringTypeName) {
       CallDepth callDepth = CallDepth.forClass(Pool.class);
+      PoolState state =
+          new PoolState(
+              callDepth,
+              getClientInfoProvider(),
+              VertxSqlClientSingletons.getBuildingSupplierCapture());
       if (callDepth.getAndIncrement() == 0) {
         String dbSystemName = resolveDbSystemName(sqlConnectOptions, declaringTypeName);
-        VertxSqlClientInfoCapture infoCapture = new VertxSqlClientInfoCapture();
-        infoCapture.setDbSystemName(dbSystemName);
-        infoCapture.setInfo(VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
+        VertxSqlClientInfoCapture infoCapture =
+            new VertxSqlClientInfoCapture(
+                VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
         setClientInfoProvider(infoCapture);
-        VertxSqlClientSingletons.setBuildingSupplierCapture(infoCapture);
+        VertxSqlClientSingletons.setBuildingSupplierCapture(null);
       }
-      return callDepth;
+      return state;
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
     public static void onExit(
         @Advice.Return @Nullable Pool pool,
         @Advice.Argument(1) SqlConnectOptions sqlConnectOptions,
-        @Advice.Enter CallDepth callDepth) {
-      if (callDepth.decrementAndGet() > 0) {
+        @Advice.Enter PoolState state) {
+      if (state.callDepth.decrementAndGet() > 0) {
         return;
       }
 
       VertxSqlClientInfoProvider infoProvider = getClientInfoProvider();
       if (pool != null && infoProvider instanceof VertxSqlClientInfoCapture) {
         VertxSqlClientInfoCapture infoCapture = (VertxSqlClientInfoCapture) infoProvider;
-        String dbSystemName = infoCapture.getDbSystemName();
+        VertxSqlClientInfo info = infoCapture.getInfo();
+        String dbSystemName = info != null ? info.getDbSystemName() : null;
         if (dbSystemName == null || !isKnownDbSystem(dbSystemName)) {
           dbSystemName = getDbSystemNameFromClassName(pool);
-          infoCapture.setDbSystemName(dbSystemName);
         }
         infoCapture.setInfo(VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
       }
       if (pool != null) {
         setPoolClientInfoProvider(pool, infoProvider);
       }
-      setClientInfoProvider(null);
-      VertxSqlClientSingletons.setBuildingSupplierCapture(null);
+      setClientInfoProvider(state.previousProvider);
+      VertxSqlClientSingletons.setBuildingSupplierCapture(state.previousSupplier);
+    }
+
+    public static final class PoolState {
+      public final CallDepth callDepth;
+      @Nullable public final VertxSqlClientInfoProvider previousProvider;
+      @Nullable public final VertxSqlClientSupplierInfo previousSupplier;
+
+      public PoolState(
+          CallDepth callDepth,
+          @Nullable VertxSqlClientInfoProvider previousProvider,
+          @Nullable VertxSqlClientSupplierInfo previousSupplier) {
+        this.callDepth = callDepth;
+        this.previousProvider = previousProvider;
+        this.previousSupplier = previousSupplier;
+      }
     }
   }
 
   @SuppressWarnings("unused")
   public static class GetConnectionAdvice {
-    @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
-    @Nullable
-    public static Object onEnter(@Advice.This Pool pool) {
-      VertxSqlClientInfoCapture supplierCapture =
-          VertxSqlClientSingletons.getPoolSupplierCapture(pool);
-      if (supplierCapture == null) {
-        return null;
-      }
-      Object connectionRequest = new Object();
-      supplierCapture.addConnectionRequest(connectionRequest);
-      return connectionRequest;
-    }
-
     @AssignReturned.ToReturned
-    @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class, inline = false)
-    @Nullable
+    @Advice.OnMethodExit(suppress = Throwable.class, inline = false)
     public static Future<SqlConnection> onExit(
-        @Advice.This Pool pool,
-        @Advice.Return @Nullable Future<SqlConnection> future,
-        @Advice.Enter @Nullable Object connectionRequest) {
+        @Advice.This Pool pool, @Advice.Return Future<SqlConnection> future) {
       VertxSqlClientInfoProvider infoProvider = getPoolClientInfoProvider(pool);
-      VertxSqlClientInfoCapture supplierCapture =
-          infoProvider instanceof VertxSqlClientInfoCapture
-              ? (VertxSqlClientInfoCapture) infoProvider
-              : null;
-      if (future == null) {
-        if (supplierCapture != null && connectionRequest != null) {
-          supplierCapture.removeConnectionRequest(connectionRequest);
-        }
-        return null;
-      }
-      return wrapContext(
-          VertxSqlClientSingletons.attachClientInfoProvider(
-              future, infoProvider, connectionRequest));
+      return wrapContext(VertxSqlClientSingletons.attachClientInfoProvider(future, infoProvider));
     }
   }
 }

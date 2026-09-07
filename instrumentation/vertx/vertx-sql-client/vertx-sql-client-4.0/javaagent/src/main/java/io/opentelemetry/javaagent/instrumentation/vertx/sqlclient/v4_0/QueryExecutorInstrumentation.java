@@ -104,7 +104,7 @@ class QueryExecutorInstrumentation implements TypeInstrumentation {
         }
 
         VertxSqlClientInfo info = VertxSqlClientUtil.getQueryExecutorInfo(queryExecutor);
-        if (info == null || !info.isConfigurationCaptured()) {
+        if (info == null) {
           return new AdviceScope(callDepth);
         }
         VertxSqlClientRequest otelRequest =

@@ -40,7 +40,8 @@ class VertxSqlClientLateAttributesExtractor
       VertxSqlClientRequest request,
       @Nullable Void response,
       @Nullable Throwable error) {
-    if (!request.isInfoUpdated()) {
+    if (!(request instanceof VertxSqlClientDeferredRequest)
+        || !((VertxSqlClientDeferredRequest) request).isInfoUpdated()) {
       return;
     }
     if (emitStableDatabaseSemconv()) {

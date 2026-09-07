@@ -77,18 +77,13 @@ class CommandSchedulerInstrumentation implements TypeInstrumentation {
         // First schedule call (query executor → pool or direct connection).
         // The current OpenTelemetry context is correct — store it on the command.
         VertxSqlClientSingletons.setCommandContext(command, Context.current());
-        VertxSqlClientSingletons.capturePendingConnectionDataListener(command);
         return null;
       }
       // Subsequent schedule call (pool → connection).
-      // A client whose target is known only per connection starts its span here; dispatch with
-      // that span's context. Otherwise restore the stored context so that executeBlocking
-      // dispatches with the correct parent for downstream instrumentation (e.g. JDBC).
-      Context started =
-          VertxSqlClientSingletons.notifyConnectionDataListener(command, commandScheduler);
-      if (started != null) {
-        VertxSqlClientSingletons.setCommandContext(command, started);
-        return started.makeCurrent();
+      // Supplier metadata comes from the connection selected for this command.
+      Context captured = VertxSqlClientSingletons.captureConnectionInfo(command, commandScheduler);
+      if (captured != null) {
+        return captured.makeCurrent();
       }
       return stored.makeCurrent();
     }
