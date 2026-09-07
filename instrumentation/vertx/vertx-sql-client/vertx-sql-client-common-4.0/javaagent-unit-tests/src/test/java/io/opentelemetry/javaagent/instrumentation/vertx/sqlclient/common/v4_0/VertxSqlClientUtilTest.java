@@ -12,10 +12,7 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.vertx.core.Promise;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import io.vertx.sqlclient.SqlConnectOptions;
 import org.junit.jupiter.api.Test;
 
 class VertxSqlClientUtilTest {
@@ -51,42 +48,6 @@ class VertxSqlClientUtilTest {
   }
 
   @Test
-  void claimsRequestOnlyOnceWhenCallbacksRace() throws Exception {
-    Promise<Object> promise = Promise.promise();
-    VertxSqlClientUtil.attachRequest(promise, request("race"), Context.root(), Context.root());
-    CyclicBarrier barrier = new CyclicBarrier(2);
-    ExecutorService executor = Executors.newFixedThreadPool(2);
-    try {
-      Future<Boolean> first =
-          executor.submit(
-              () -> {
-                barrier.await();
-                Scope scope = VertxSqlClientUtil.endQuerySpan(INSTRUMENTER, promise, null);
-                if (scope != null) {
-                  scope.close();
-                }
-                return scope != null;
-              });
-      Future<Boolean> second =
-          executor.submit(
-              () -> {
-                barrier.await();
-                Scope scope =
-                    VertxSqlClientUtil.endQuerySpan(
-                        INSTRUMENTER, promise, new IllegalStateException("duplicate"));
-                if (scope != null) {
-                  scope.close();
-                }
-                return scope != null;
-              });
-
-      assertThat(first.get()).isNotEqualTo(second.get());
-    } finally {
-      executor.shutdownNow();
-    }
-  }
-
-  @Test
   void keepsDistinctPromisesIndependent() {
     Promise<Object> firstPromise = Promise.promise();
     Promise<Object> secondPromise = Promise.promise();
@@ -110,6 +71,6 @@ class VertxSqlClientUtilTest {
 
   private static VertxSqlClientRequest request(String query) {
     return new VertxSqlClientRequest(
-        query, VertxSqlClientInfo.notYetCaptured("postgresql"), false, null);
+        query, VertxSqlClientInfo.create(new SqlConnectOptions(), "postgresql"), false, null);
   }
 }

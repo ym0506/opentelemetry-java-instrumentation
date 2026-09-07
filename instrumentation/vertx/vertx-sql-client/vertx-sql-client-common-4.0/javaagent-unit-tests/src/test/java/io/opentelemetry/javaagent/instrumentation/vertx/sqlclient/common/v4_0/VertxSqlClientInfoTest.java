@@ -56,16 +56,17 @@ class VertxSqlClientInfoTest {
   }
 
   @Test
-  void distinguishesNotYetCapturedFromUnrepresentableConfiguration() {
-    VertxSqlClientInfo notYetCaptured = VertxSqlClientInfo.notYetCaptured("postgresql");
+  void capturesUnrepresentableConfigurationWithoutFallingBackToLegacyTarget() {
     VertxSqlClientInfo unrepresentable =
         VertxSqlClientInfo.create(options("invalid host", 5432, "database", "user"), "postgresql");
 
-    assertThat(notYetCaptured.isConfigurationCaptured()).isFalse();
-    assertThat(notYetCaptured.isServerTargetCaptured()).isFalse();
-    assertThat(unrepresentable.isConfigurationCaptured()).isTrue();
     assertThat(unrepresentable.isServerTargetCaptured()).isTrue();
     assertThat(unrepresentable.getServerTarget()).isNull();
+    VertxSqlClientRequest request =
+        new VertxSqlClientRequest("select 1", unrepresentable, false, null);
+    assertThat(request.isServerTargetCaptured()).isTrue();
+    assertThat(request.getConfiguredServerAddress()).isNull();
+    assertThat(request.getConfiguredServerPort()).isNull();
   }
 
   @Test
@@ -74,9 +75,27 @@ class VertxSqlClientInfoTest {
         VertxSqlClientInfo.createLegacy(
             options("db.example", 5432, "database", "user"), "postgresql");
 
-    assertThat(info.isConfigurationCaptured()).isTrue();
     assertThat(info.isServerTargetCaptured()).isFalse();
     assertThat(info.getServerTarget()).isNull();
+  }
+
+  @Test
+  void constructionSnapshotUpdatesDoNotChangeExistingRequests() {
+    SqlConnectOptions options = options("db.example", 5432, "database", "user");
+    VertxSqlClientInfoCapture capture =
+        new VertxSqlClientInfoCapture(VertxSqlClientInfo.create(options, null));
+    VertxSqlClientInfoProvider provider = capture;
+    VertxSqlClientRequest request =
+        new VertxSqlClientRequest("select 1", provider.getInfo(), false, null);
+    VertxSqlClientInfo resolved = VertxSqlClientInfo.create(options, "postgresql");
+
+    capture.setInfo(resolved);
+
+    assertThat(provider.getInfo()).isSameAs(resolved);
+    assertThat(provider.getInfo().getDbSystemName()).isEqualTo("postgresql");
+    assertThat(provider.getInfo().getServerTarget().getPort()).isNull();
+    assertThat(request.getDbSystemName()).isEqualTo("other_sql");
+    assertThat(request.getConfiguredServerPort()).isEqualTo(5432);
   }
 
   @Test

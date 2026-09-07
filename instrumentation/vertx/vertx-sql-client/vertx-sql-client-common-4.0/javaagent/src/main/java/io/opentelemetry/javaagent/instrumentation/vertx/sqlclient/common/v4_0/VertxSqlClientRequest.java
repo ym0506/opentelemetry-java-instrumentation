@@ -13,8 +13,7 @@ public class VertxSqlClientRequest {
   private final String queryText;
   private final boolean parameterizedQuery;
   @Nullable private final Long operationBatchSize;
-  private final VertxSqlClientInfo initialInfo;
-  private volatile VertxSqlClientInfo info;
+  private final VertxSqlClientInfo info;
 
   public VertxSqlClientRequest(
       String queryText,
@@ -24,20 +23,7 @@ public class VertxSqlClientRequest {
     this.queryText = queryText;
     this.parameterizedQuery = parameterizedQuery;
     this.operationBatchSize = operationBatchSize;
-    this.initialInfo = info;
     this.info = info;
-  }
-
-  public synchronized boolean replaceInfo(VertxSqlClientInfo info) {
-    if (this.info.isConfigurationCaptured()) {
-      return false;
-    }
-    this.info = info;
-    return true;
-  }
-
-  public boolean isInfoUpdated() {
-    return info != initialInfo;
   }
 
   public String getQueryText() {

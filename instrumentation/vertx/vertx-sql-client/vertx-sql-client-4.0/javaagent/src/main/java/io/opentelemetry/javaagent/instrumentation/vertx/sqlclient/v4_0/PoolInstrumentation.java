@@ -93,9 +93,8 @@ class PoolInstrumentation implements TypeInstrumentation {
       }
 
       String dbSystemName = resolveDbSystemName(sqlConnectOptions, declaringTypeName);
-      VertxSqlClientInfoCapture infoCapture = new VertxSqlClientInfoCapture();
-      infoCapture.setDbSystemName(dbSystemName);
-      infoCapture.setInfo(VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
+      VertxSqlClientInfoCapture infoCapture =
+          new VertxSqlClientInfoCapture(VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
       setClientInfoProvider(infoCapture);
       return callDepth;
     }
@@ -112,10 +111,10 @@ class PoolInstrumentation implements TypeInstrumentation {
       VertxSqlClientInfoProvider infoProvider = getClientInfoProvider();
       if (pool != null && infoProvider instanceof VertxSqlClientInfoCapture) {
         VertxSqlClientInfoCapture infoCapture = (VertxSqlClientInfoCapture) infoProvider;
-        String dbSystemName = infoCapture.getDbSystemName();
+        VertxSqlClientInfo info = infoCapture.getInfo();
+        String dbSystemName = info != null ? info.getDbSystemName() : null;
         if (dbSystemName == null || !isKnownDbSystem(dbSystemName)) {
           dbSystemName = getDbSystemNameFromClassName(pool);
-          infoCapture.setDbSystemName(dbSystemName);
         }
         infoCapture.setInfo(VertxSqlClientInfo.create(sqlConnectOptions, dbSystemName));
       }
@@ -139,9 +138,8 @@ class PoolInstrumentation implements TypeInstrumentation {
 
       SqlConnectOptions first = databases == null || databases.isEmpty() ? null : databases.get(0);
       String dbSystemName = resolveDbSystemName(first, declaringTypeName);
-      VertxSqlClientInfoCapture infoCapture = new VertxSqlClientInfoCapture();
-      infoCapture.setDbSystemName(dbSystemName);
-      infoCapture.setInfo(VertxSqlClientInfo.create(databases, dbSystemName));
+      VertxSqlClientInfoCapture infoCapture =
+          new VertxSqlClientInfoCapture(VertxSqlClientInfo.create(databases, dbSystemName));
       setClientInfoProvider(infoCapture);
       return callDepth;
     }
@@ -158,10 +156,10 @@ class PoolInstrumentation implements TypeInstrumentation {
       VertxSqlClientInfoProvider infoProvider = getClientInfoProvider();
       if (client != null && infoProvider instanceof VertxSqlClientInfoCapture) {
         VertxSqlClientInfoCapture infoCapture = (VertxSqlClientInfoCapture) infoProvider;
-        String dbSystemName = infoCapture.getDbSystemName();
+        VertxSqlClientInfo info = infoCapture.getInfo();
+        String dbSystemName = info != null ? info.getDbSystemName() : null;
         if (dbSystemName == null || !isKnownDbSystem(dbSystemName)) {
           dbSystemName = getDbSystemNameFromClassName(client);
-          infoCapture.setDbSystemName(dbSystemName);
         }
         infoCapture.setInfo(VertxSqlClientInfo.create(databases, dbSystemName));
       }

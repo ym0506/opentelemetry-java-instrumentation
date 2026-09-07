@@ -21,13 +21,7 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
   @Nullable private final String legacyServerAddress;
   @Nullable private final Integer legacyServerPort;
   @Nullable private final DbServerTarget serverTarget;
-  private final boolean configurationCaptured;
   private final boolean serverTargetCaptured;
-
-  public static VertxSqlClientInfo notYetCaptured(@Nullable String dbSystemName) {
-    return new VertxSqlClientInfo(
-        normalizedDbSystemName(dbSystemName), null, null, null, null, null, false, false);
-  }
 
   @Nullable
   public static VertxSqlClientInfo create(
@@ -43,7 +37,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
         connectOptions.getHost(),
         connectOptions.getPort(),
         VertxServerTarget.from(connectOptions, normalizedDbSystemName),
-        true,
         true);
   }
 
@@ -62,7 +55,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
         first.getHost(),
         first.getPort(),
         VertxServerTarget.from(connectOptions, normalizedDbSystemName),
-        true,
         true);
   }
 
@@ -79,7 +71,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
         connectOptions.getHost(),
         connectOptions.getPort(),
         null,
-        true,
         false);
   }
 
@@ -90,7 +81,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
       @Nullable String legacyServerAddress,
       @Nullable Integer legacyServerPort,
       @Nullable DbServerTarget serverTarget,
-      boolean configurationCaptured,
       boolean serverTargetCaptured) {
     this.dbSystemName = dbSystemName;
     this.namespace = namespace;
@@ -98,7 +88,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
     this.legacyServerAddress = legacyServerAddress;
     this.legacyServerPort = legacyServerPort;
     this.serverTarget = serverTarget;
-    this.configurationCaptured = configurationCaptured;
     this.serverTargetCaptured = serverTargetCaptured;
   }
 
@@ -129,10 +118,6 @@ public final class VertxSqlClientInfo implements VertxSqlClientInfoProvider {
   @Nullable
   public DbServerTarget getServerTarget() {
     return serverTarget;
-  }
-
-  public boolean isConfigurationCaptured() {
-    return configurationCaptured;
   }
 
   public boolean isServerTargetCaptured() {
