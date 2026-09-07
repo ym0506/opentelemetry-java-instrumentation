@@ -100,6 +100,24 @@ class JdbcConnectionPoolNameUtilTest {
             "address and namespace",
             DbInfo.builder().serverAddress("db.example").dbNamespace("orders").build(),
             "db.example/orders"),
+        argumentSet(
+            "configured target group and namespace",
+            DbInfo.builder()
+                .serverAddress("db.example")
+                .serverPort(5432)
+                .serverAddressGroup("db.example:5432,db-secondary:5432")
+                .dbNamespace("orders")
+                .build(),
+            "db.example:5432,db-secondary:5432/orders"),
+        argumentSet(
+            "unrepresentable multi-target",
+            DbInfo.builder()
+                .serverAddress("db.example")
+                .serverPort(5432)
+                .multiTarget(true)
+                .dbNamespace("orders")
+                .build(),
+            "fallback"),
         argumentSet("namespace only", DbInfo.builder().dbNamespace("orders").build(), "orders"),
         argumentSet("port only", DbInfo.builder().serverPort(5432).build(), FALLBACK_NAME),
         argumentSet(

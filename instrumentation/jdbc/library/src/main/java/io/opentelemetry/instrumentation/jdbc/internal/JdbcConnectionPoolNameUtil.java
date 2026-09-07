@@ -38,6 +38,16 @@ public final class JdbcConnectionPoolNameUtil {
   }
 
   public static String poolName(DbInfo dbInfo, String fallbackName) {
+    String serverAddressGroup = dbInfo.getServerAddressGroup();
+    if (serverAddressGroup != null) {
+      StringBuilder poolName = new StringBuilder(serverAddressGroup);
+      appendNamespace(poolName, dbInfo.getDbNamespace());
+      return poolName.toString();
+    }
+    if (dbInfo.isMultiTarget()) {
+      return fallbackName;
+    }
+
     String serverAddress = dbInfo.getServerAddress();
     Integer serverPort = dbInfo.getServerPort();
     String dbNamespace = dbInfo.getDbNamespace();
@@ -53,17 +63,21 @@ public final class JdbcConnectionPoolNameUtil {
         poolName.append(':').append(serverPort);
       }
     }
+    appendNamespace(poolName, dbNamespace);
+
+    // Do not append a sequence suffix: it would be unstable across restarts and nodes.
+    // Asynchronous metric observations with equal attributes are spatially aggregated, so pools
+    // connected to the same database can intentionally share the derived name.
+    return poolName.length() > 0 ? poolName.toString() : fallbackName;
+  }
+
+  private static void appendNamespace(StringBuilder poolName, @Nullable String dbNamespace) {
     if (dbNamespace != null) {
       if (poolName.length() > 0) {
         poolName.append('/');
       }
       poolName.append(dbNamespace);
     }
-
-    // Do not append a sequence suffix: it would be unstable across restarts and nodes.
-    // Asynchronous metric observations with equal attributes are spatially aggregated, so pools
-    // connected to the same database can intentionally share the derived name.
-    return poolName.length() > 0 ? poolName.toString() : fallbackName;
   }
 
   @Nullable

@@ -2264,6 +2264,28 @@ class JdbcConnectionUrlParserTest {
             .build());
   }
 
+  @Test
+  void configuredConnectionStringUsesTheCompleteTargetGroup() {
+    DbInfo info = parse("jdbc:postgresql://pg.host1:5432,pg.host2:5433/pgdb", null);
+
+    assertThat(info.getDbConnectionString()).isEqualTo("postgresql://localhost:5432");
+    assertThat(info.getConfiguredConnectionString())
+        .isEqualTo("postgresql://pg.host1:5432,pg.host2:5433");
+  }
+
+  @Test
+  void configuredConnectionStringIsAbsentWhenTargetGroupCannotBeRepresented() {
+    DbInfo info =
+        parse(
+            "jdbc:oracle:thin:@(description_list="
+                + "(description=(address=(host=primary)(port=1521)))"
+                + "(description=(address=(host=secondary)(port=1521))))",
+            null);
+
+    assertThat(info.getConfiguredConnectionString()).isNull();
+    assertThat(info.getDbConnectionString()).isEqualTo("oracle:thin://primary:1521");
+  }
+
   private static Stream<Arguments> configuredOrderServerAddressGroupArguments() {
     return Stream.of(
         argumentSet(
@@ -2495,6 +2517,11 @@ class JdbcConnectionUrlParserTest {
       this.dbInfo =
           DbInfo.builder()
               .dbConnectionString(builder.shortUrl)
+              .configuredConnectionString(
+                  builder.shortUrl == null || builder.serverAddressGroup == null
+                      ? null
+                      : builder.shortUrl.substring(0, builder.shortUrl.indexOf("://") + 3)
+                          + builder.serverAddressGroup)
               .dbSystemName(builder.system)
               .dbSystem(oldSystem)
               .dbUser(builder.user)

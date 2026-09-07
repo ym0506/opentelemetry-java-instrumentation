@@ -354,7 +354,12 @@ public final class ParseContext {
     } else if (namespace != null) {
       builder.dbName(namespace);
     }
-    builder.dbConnectionString(buildShortUrl(type, subtype, host, port));
+    String legacyConnectionString = buildShortUrl(type, subtype, host, port);
+    builder.dbConnectionString(legacyConnectionString);
+    if (serverAddressGroup != null) {
+      builder.configuredConnectionString(
+          UrlParsingUtils.buildShortUrlWithServerAddressGroup(type, subtype, serverAddressGroup));
+    }
     if (serverAddressGroup != null) {
       builder.serverAddressGroup(serverAddressGroup);
     }

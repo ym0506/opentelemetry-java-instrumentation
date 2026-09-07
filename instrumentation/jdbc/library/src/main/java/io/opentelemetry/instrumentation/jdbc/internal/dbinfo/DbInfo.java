@@ -41,6 +41,13 @@ public abstract class DbInfo {
   @Nullable
   public abstract String getDbConnectionString();
 
+  /**
+   * The normalized configured target connection string, when it can be represented without losing
+   * any configured targets.
+   */
+  @Nullable
+  public abstract String getConfiguredConnectionString();
+
   @Nullable
   public abstract String getDbUser();
 
@@ -97,6 +104,7 @@ public abstract class DbInfo {
         .dbSystem(getDbSystem())
         .subtype(getSubtype())
         .dbConnectionString(getDbConnectionString())
+        .configuredConnectionString(getConfiguredConnectionString())
         .dbUser(getDbUser())
         .dbName(getDbName())
         .dbNamespace(getDbNamespace())
@@ -125,6 +133,8 @@ public abstract class DbInfo {
     public abstract Builder subtype(String subtype);
 
     public abstract Builder dbConnectionString(String dbConnectionString);
+
+    public abstract Builder configuredConnectionString(String configuredConnectionString);
 
     public abstract Builder dbUser(String dbUser);
 
