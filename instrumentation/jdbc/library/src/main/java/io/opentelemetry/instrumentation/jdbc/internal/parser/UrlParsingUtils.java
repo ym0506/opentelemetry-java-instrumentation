@@ -139,15 +139,6 @@ public final class UrlParsingUtils {
     return url.toString();
   }
 
-  /** Build a short URL containing a normalized comma-separated configured target group. */
-  public static String buildShortUrlWithServerAddressGroup(
-      String type, @Nullable String subtype, String serverAddressGroup) {
-    StringBuilder url = new StringBuilder();
-    appendTypePrefix(url, type, subtype);
-    url.append("//").append(serverAddressGroup);
-    return url.toString();
-  }
-
   private static void appendTypePrefix(
       StringBuilder builder, String type, @Nullable String subtype) {
     builder.append(type);

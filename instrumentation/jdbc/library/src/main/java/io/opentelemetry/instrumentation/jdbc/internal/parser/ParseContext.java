@@ -357,10 +357,6 @@ public final class ParseContext {
     String legacyConnectionString = buildShortUrl(type, subtype, host, port);
     builder.dbConnectionString(legacyConnectionString);
     if (serverAddressGroup != null) {
-      builder.configuredConnectionString(
-          UrlParsingUtils.buildShortUrlWithServerAddressGroup(type, subtype, serverAddressGroup));
-    }
-    if (serverAddressGroup != null) {
       builder.serverAddressGroup(serverAddressGroup);
     }
     return builder.build();
